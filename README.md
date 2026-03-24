@@ -67,7 +67,10 @@ sudo ./.venv/bin/python router.py --interface eth1 --nat-mode
 │   ├── packet_handler.py    # 数据包捕获、处理和发送
 │   └── utils.py             # 校验和计算等工具函数
 ├── tests/                   # 单元和集成测试
-├── AGENTS.md                # 真实环境验证指南（重要！）
+├── docs/                    # 文档
+│   ├── verify.md            # 完整的验证指南
+│   └── env.md               # sudo NOPASSWD配置指南
+├── AGENTS.md                # VPS部署拓扑和快速配置（重要！）
 ├── README.md                # 本文件
 ├── requirements.txt         # Python依赖
 └── .gitignore               # Git忽略配置
@@ -75,7 +78,13 @@ sudo ./.venv/bin/python router.py --interface eth1 --nat-mode
 
 ## 网络验证设置
 
-详见 [AGENTS.md](./AGENTS.md) 获取完整的验证指南。
+详见 [AGENTS.md](./AGENTS.md) 获取网络拓扑说明和快速配置指南。
+
+### 相关文档
+
+- **[AGENTS.md](./AGENTS.md)** - VPS部署拓扑和基础配置
+- **[docs/verify.md](./docs/verify.md)** - 完整的验证场景、故障排查和性能测试指南  
+- **[docs/env.md](./docs/env.md)** - sudo NOPASSWD配置（调试中免密执行命令）
 
 ### 快速参考
 
@@ -84,8 +93,8 @@ VPS A (路由器)  <--内网--> VPS B (源端)
 10.0.0.10                  10.0.0.20
 ```
 
-1. **VPS A**：配置网卡，启用IP转发，运行路由器程序
-2. **VPS B**：配置网卡，添加路由指向VPS A
+1. **VPS A**：启用IP转发，运行路由器程序
+2. **VPS B**：配置路由指向VPS A
 3. **验证**：从VPS B发送包，在VPS A上查看NAT转换结果
 
 ## 技术架构
