@@ -42,5 +42,6 @@ curl http://192.168.1.100:80
 
 ## 相关文档
 
+- **测试套件**：[docs/test.md](./docs/test.md) - test.py HTTP服务器及测试用例说明
 - **完整验证指南**：[docs/verify.md](./docs/verify.md) - 详细的验证场景、故障排查和性能测试指南
 - **环境配置**：[docs/env.md](./docs/env.md) - 如何配置sudo NOPASSWD以免密执行调试命令

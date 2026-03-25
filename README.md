@@ -39,26 +39,38 @@ source .venv/bin/activate
 
 # 安装依赖
 pip install -r requirements.txt
+
+# 或使用Makefile
+make install
 ```
 
 ## 快速开始
+
+### 快速参考
+
+详见 **[QUICK_START.md](./QUICK_START.md)** 了解常用命令。
+
+### 标准流程
 
 ```bash
 # 激活虚拟环境
 source .venv/bin/activate
 
-# 启用IP转发（系统级别）
-sudo sysctl -w net.ipv4.ip_forward=1
+# 终端1: 启动test.py服务器（在VPS B上）
+python test.py
 
-# 运行路由器（需要root权限）
-# 监听eth1网卡，启用NAT模式
-sudo ./.venv/bin/python router.py --interface eth1 --nat-mode
+# 终端2: 运行单元测试
+pytest tests/ -v
+
+# 终端3: 运行集成测试
+python integration_test.py http://10.0.0.20:8888
 ```
 
 ## 项目结构
 
 ```
 ├── router.py                # 主程序入口
+├── test.py                  # 测试HTTP服务器（VPS B上运行）
 ├── router/                  # 路由器核心模块
 │   ├── __init__.py
 │   ├── forwarding.py        # IPv4转发逻辑
@@ -69,7 +81,8 @@ sudo ./.venv/bin/python router.py --interface eth1 --nat-mode
 ├── tests/                   # 单元和集成测试
 ├── docs/                    # 文档
 │   ├── verify.md            # 完整的验证指南
-│   └── env.md               # sudo NOPASSWD配置指南
+│   ├── env.md               # sudo NOPASSWD配置指南
+│   └── test.md              # test.py使用指南
 ├── AGENTS.md                # VPS部署拓扑和快速配置（重要！）
 ├── README.md                # 本文件
 ├── requirements.txt         # Python依赖
@@ -85,17 +98,18 @@ sudo ./.venv/bin/python router.py --interface eth1 --nat-mode
 - **[AGENTS.md](./AGENTS.md)** - VPS部署拓扑和基础配置
 - **[docs/verify.md](./docs/verify.md)** - 完整的验证场景、故障排查和性能测试指南  
 - **[docs/env.md](./docs/env.md)** - sudo NOPASSWD配置（调试中免密执行命令）
+- **[docs/test.md](./docs/test.md)** - test.py HTTP测试服务器使用指南
 
 ### 快速参考
 
 ```
-VPS A (路由器)  <--内网--> VPS B (源端)
+VPS A (路由器)  <--内网--> VPS B (源端/测试)
 10.0.0.10                  10.0.0.20
 ```
 
-1. **VPS A**：启用IP转发，运行路由器程序
-2. **VPS B**：配置路由指向VPS A
-3. **验证**：从VPS B发送包，在VPS A上查看NAT转换结果
+1. **VPS A**：启用IP转发，运行 `router.py` 程序
+2. **VPS B**：配置路由指向VPS A，启动 `test.py` 进行验证
+3. **验证**：通过test.py提供的HTTP API运行各种测试
 
 ## 技术架构
 
