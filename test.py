@@ -78,7 +78,7 @@ class NATTestCase:
         """Get test result summary"""
         duration = None
         if self.start_time and self.end_time:
-            duration = (self.end_time - self.start_time) * 1000  # ms
+            duration = (self.end_time - self.start_time).total_seconds() * 1000  # ms
         
         return {
             "name": self.name,

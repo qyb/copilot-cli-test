@@ -1,0 +1,15 @@
+这是一个实验性质项目, 尝试 Github Copilot Free Tier 提供的每月 50 条所谓 Premium（Anthropic Claude Haiku 4.5） requests 究竟能做什么
+
+计划每天 2 次 request, 看看一个月后的成果
+
+Prompt1: 这是一个空白目录，新项目。计划开发一个Linux环境里用户态的路由器程序，接管网卡接口，实现IPv4的路由转发。采用 Python Scapy 框架完成该任务。你来分析一下是否可行，如果可以完成，那先启动项目的bootstrap，包括创建一个 .gitignore, requirements.txt, 当前目录下创建一个 .venv 目录，以及最开始的 README.md 和 AGENTS.md
+
+Prompt2: AGENTS.md 全是无用的内容, 需要彻底重写, 替换为该项目该如何在真实环境中验证的内容。目前有两台VPS，每台两块网卡，内网网卡连接在同一私网内，外网网卡没有公网地址，依赖云服务商实现公网连接。验证是在一台VPS A 上运行路由器，另一台VPS B 配置目标网络路由到A机器的内网IP，路由器得实现一层NAT地址转换把源地址替换为自己的发出去和回程目标地址替换。你
+分析一下是否对路，如果可行就把这套验证的网络设置和包重写方案写入 AGENTS.md 里 ；README.md 按你的思路做适当修改
+
+Prompt3: 之前描述有误, 两台VPS都只有eth0, 处于同一私网, 云服务商代理公网连接, 需要修改 AGENTS.md 的信息反应这个事实. 以及 AGENTS.md 只保留关于网络拓扑等前100行左右必要信息, 挪出
+剩余内容到 docs/verify.md, BTW: 计划调试中你自行执行 sudo, 所以还需要 docs/env.md 说明如何设置 sudo 以 NOPASSWD 执行所有调试中需要的命令. 为 docs 下的文档在 README.md/AGENTS.md 中新增披露入口
+
+Prompt4: 开发 test.py, 跑在测试机器上, 提供 http 接口, 让你可以控制它向路由器发包完成所需要的测试验证. 目前环境我已经设好了 sudo NOPASSWD, 所以现在可以无障碍开发 test.py 了. 完成所有你认为第一版路由器应该通过的测试用例. 为了方便你开发, 我猜你会用 .venv 里安装 http 相关的包？总之做完上面的, 别忘记更新相关文档, requirements.txt, 或者你认为有必要新增加的文档
+
+Prompt5: test.py 运行单元测试没问题, 但是运行集成测试 integration_test.py 出错. test.py 所在终端上主要错误信息是 "TypeError: Object of type timedelta is not JSON serializable", fix it. 争取一次作对, 跑成功你自己写出来的 integration_test.py

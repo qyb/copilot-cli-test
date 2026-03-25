@@ -29,18 +29,18 @@ echo
 
 # Print configuration
 echo "Configuration:"
-echo "  Router IP: 10.0.0.10"
-echo "  Test Machine IP: 10.0.0.20"
-echo "  Target Network: 192.168.1.0/24"
-echo "  Target IP: 192.168.1.100"
+echo "  Router IP: 172.16.35.103"
+echo "  Test Machine IP: 172.16.39.47"
+echo "  Target Network: 125.39.61.0/24"
+echo "  Target IP: 125.39.61.75"
 echo
 
 # Check network connectivity
 echo "Checking network connectivity..."
-if ping -c 1 -W 2 10.0.0.10 > /dev/null 2>&1; then
-    echo "✓ Connected to router (10.0.0.10)"
+if ping -c 1 -W 2 172.16.35.103 > /dev/null 2>&1; then
+    echo "✓ Connected to router (172.16.35.103)"
 else
-    echo "⚠ Warning: Cannot reach router (10.0.0.10)"
+    echo "⚠ Warning: Cannot reach router (172.16.35.103)"
     echo "  Ensure VPS A (router) is online and configured"
 fi
 
@@ -50,7 +50,7 @@ if [ "$ROUTE_EXISTS" = "yes" ]; then
     echo "✓ Target route configured"
 else
     echo "⚠ Warning: Target route not configured"
-    echo "  Configure with: sudo ip route add 192.168.1.0/24 via 10.0.0.10"
+    echo "  Configure with: sudo ip route add 125.39.61.0/24 via 172.16.35.103"
 fi
 
 echo
