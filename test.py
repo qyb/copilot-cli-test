@@ -37,10 +37,10 @@ app = Flask(__name__)
 # Test configuration
 class TestConfig:
     """Configuration for NAT router tests"""
-    ROUTER_IP = "10.0.0.10"  # VPS A (router)
-    TEST_IP = "10.0.0.20"    # VPS B (this machine)
-    TARGET_NET = "192.168.1.0/24"  # Simulated target network
-    TARGET_IP = "192.168.1.100"
+    ROUTER_IP = "172.16.35.103"  # VPS A (router)
+    TEST_IP = "172.16.39.47"    # VPS B (this machine)
+    TARGET_NET = "125.39.61.0/24"  # Simulated target network
+    TARGET_IP = "125.39.61.75"
     
     # Test parameters
     TEST_TIMEOUT = 5  # seconds
@@ -91,7 +91,7 @@ class NATTestCase:
 
 
 class BasicNATTest(NATTestCase):
-    """Verify basic SNAT: source address rewrite 10.0.0.20 -> 10.0.0.10"""
+    """Verify basic SNAT: source address rewrite 172.16.39.47 -> 172.16.35.103"""
     
     def __init__(self):
         super().__init__(

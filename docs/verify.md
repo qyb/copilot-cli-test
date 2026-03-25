@@ -14,25 +14,25 @@
 **VPS A上（准备抓包）**：
 ```bash
 # 在eth0上抓取通过转发的包
-sudo tcpdump -i eth0 -n "ip src 10.0.0.20" -w /tmp/outgoing.pcap
+sudo tcpdump -i eth0 -n "ip src 172.16.39.47" -w /tmp/outgoing.pcap
 
 # 另一个终端实时查看
-sudo tcpdump -i eth0 -n "ip src 10.0.0.20"
+sudo tcpdump -i eth0 -n "ip src 172.16.39.47"
 ```
 
 **VPS B上（发送测试包）**：
 ```bash
-# 发送测试包到目标网络 192.168.1.100
-ping -c 3 192.168.1.100
+# 发送测试包到目标网络 125.39.61.75
+ping -c 3 125.39.61.75
 
 # 或使用curl测试HTTP
-curl http://192.168.1.100:80
+curl http://125.39.61.75:80
 ```
 
 #### 预期结果
 - VPS A上能捕获来自B的包
-- 转发出去的包源地址应为 10.0.0.10（而非10.0.0.20）
-- 回程包目标地址应被改回 10.0.0.20
+- 转发出去的包源地址应为 172.16.35.103（而非172.16.39.47）
+- 回程包目标地址应被改回 172.16.39.47
 
 ### 场景2：TCP连接NAT验证
 
@@ -53,16 +53,16 @@ sudo tcpdump -i eth0 -n "tcp" -w /tmp/tcp_flow.pcap
 **VPS B上**：
 ```bash
 # 建立TCP连接（以nc或telnet为例）
-nc -zv 192.168.1.100 80
+nc -zv 125.39.61.75 80
 
 # 或HTTP连接
-curl -v http://192.168.1.100/
+curl -v http://125.39.61.75/
 ```
 
 #### 验证项
-- [ ] 初始SYN包源地址被改为10.0.0.10
-- [ ] SYN+ACK回程包目标地址被改回10.0.0.20
-- [ ] 后续数据包源地址一致为10.0.0.10
+- [ ] 初始SYN包源地址被改为172.16.35.103
+- [ ] SYN+ACK回程包目标地址被改回172.16.39.47
+- [ ] 后续数据包源地址一致为172.16.35.103
 - [ ] FIN/RST包的地址转换保持一致
 
 ### 场景3：性能验证
@@ -75,7 +75,7 @@ curl -v http://192.168.1.100/
 **VPS A上**：
 ```bash
 # 启动iperf3服务器
-iperf3 -s -B 192.168.1.100 &
+iperf3 -s -B 125.39.61.75 &
 
 # 监控转发性能
 watch -n 1 'ip -s link show eth0'
@@ -84,7 +84,7 @@ watch -n 1 'ip -s link show eth0'
 **VPS B上**：
 ```bash
 # 运行iperf3客户端
-iperf3 -c 192.168.1.100 -t 30 -R
+iperf3 -c 125.39.61.75 -t 30 -R
 
 # 查看性能指标（吞吐量、延迟）
 ```
@@ -106,7 +106,7 @@ sudo python router.py \
 tail -f /tmp/router.log
 
 # 搜索特定源IP的转换
-grep "10.0.0.20" /tmp/router.log
+grep "172.16.39.47" /tmp/router.log
 ```
 
 ## 故障排查
@@ -116,7 +116,7 @@ grep "10.0.0.20" /tmp/router.log
 ```bash
 # VPS B上检查
 ip route show        # 确认路由规则存在
-ping -c 1 10.0.0.10  # 确认能reach VPS A
+ping -c 1 172.16.35.103  # 确认能reach VPS A
 
 # VPS A上检查
 sudo tcpdump -i eth0 -n  # 查看是否收到包
@@ -152,7 +152,7 @@ sudo tcpdump -i any -n "ip" -w /tmp/full_trace.pcap
 
 ```bash
 # VPS B上连接后立即断开
-nc 192.168.1.100 80 < /dev/null
+nc 125.39.61.75 80 < /dev/null
 
 # VPS A上监测NAT表清理
 sudo python router.py --interface eth0 --nat-mode --debug | grep "timeout\|cleanup"
@@ -162,7 +162,7 @@ sudo python router.py --interface eth0 --nat-mode --debug | grep "timeout\|clean
 
 ```bash
 # VPS B上发送UDP包
-echo "test" | nc -u 192.168.1.100 53
+echo "test" | nc -u 125.39.61.75 53
 
 # VPS A上抓包确认
 sudo tcpdump -i eth0 -n "udp"
@@ -172,7 +172,7 @@ sudo tcpdump -i eth0 -n "udp"
 
 ```bash
 # VPS B上发送超过MTU的ping
-ping -s 2000 192.168.1.100
+ping -s 2000 125.39.61.75
 
 # VPS A上确认分片和重组
 sudo tcpdump -i eth0 -n "ip[6:2] & 0x1fff != 0"

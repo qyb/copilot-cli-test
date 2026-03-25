@@ -37,7 +37,7 @@ python test.py --host localhost --port 8888 --debug
 
 ```bash
 # 从任何可访问VPS B的机器执行
-curl http://10.0.0.20:8888/health
+curl http://172.16.39.47:8888/health
 ```
 
 预期响应：
@@ -46,8 +46,8 @@ curl http://10.0.0.20:8888/health
 {
   "status": "ok",
   "timestamp": "2026-03-24T08:00:00.000000",
-  "test_machine_ip": "10.0.0.20",
-  "router_ip": "10.0.0.10"
+  "test_machine_ip": "172.16.39.47",
+  "router_ip": "172.16.35.103"
 }
 ```
 
@@ -59,15 +59,15 @@ curl http://10.0.0.20:8888/health
 获取当前测试配置
 
 ```bash
-curl http://10.0.0.20:8888/config
+curl http://172.16.39.47:8888/config
 ```
 
 ```json
 {
-  "test_machine_ip": "10.0.0.20",
-  "router_ip": "10.0.0.10",
-  "target_network": "192.168.1.0/24",
-  "target_ip": "192.168.1.100",
+  "test_machine_ip": "172.16.39.47",
+  "router_ip": "172.16.35.103",
+  "target_network": "125.39.61.0/24",
+  "target_ip": "125.39.61.75",
   "test_timeout": 5
 }
 ```
@@ -76,11 +76,11 @@ curl http://10.0.0.20:8888/config
 更新测试配置
 
 ```bash
-curl -X PUT http://10.0.0.20:8888/config \
+curl -X PUT http://172.16.39.47:8888/config \
   -H "Content-Type: application/json" \
   -d '{
-    "router_ip": "10.0.0.10",
-    "test_machine_ip": "10.0.0.20",
+    "router_ip": "172.16.35.103",
+    "test_machine_ip": "172.16.39.47",
     "target_network": "192.168.100.0/24",
     "target_ip": "192.168.100.1",
     "test_timeout": 10
@@ -93,7 +93,7 @@ curl -X PUT http://10.0.0.20:8888/config \
 运行所有7个测试用例
 
 ```bash
-curl -X POST http://10.0.0.20:8888/test/all
+curl -X POST http://172.16.39.47:8888/test/all
 ```
 
 响应格式：
@@ -112,7 +112,7 @@ curl -X POST http://10.0.0.20:8888/test/all
       "duration_ms": 45.2,
       "details": {
         "target_route_exists": true,
-        "routes": ["default via 10.0.0.10 dev eth0", ...]
+        "routes": ["default via 172.16.35.103 dev eth0", ...]
       },
       "timestamp": "2026-03-24T08:00:00.000000"
     },
@@ -125,22 +125,22 @@ curl -X POST http://10.0.0.20:8888/test/all
 
 ```bash
 # 路由表测试
-curl -X POST http://10.0.0.20:8888/test/route_table
+curl -X POST http://172.16.39.47:8888/test/route_table
 
 # 网络连接测试
-curl -X POST http://10.0.0.20:8888/test/connectivity
+curl -X POST http://172.16.39.47:8888/test/connectivity
 
 # 基本NAT测试
-curl -X POST http://10.0.0.20:8888/test/basic_nat
+curl -X POST http://172.16.39.47:8888/test/basic_nat
 
 # TCP连接测试
-curl -X POST http://10.0.0.20:8888/test/tcp
+curl -X POST http://172.16.39.47:8888/test/tcp
 
 # UDP包测试
-curl -X POST http://10.0.0.20:8888/test/udp
+curl -X POST http://172.16.39.47:8888/test/udp
 
 # 分片测试
-curl -X POST http://10.0.0.20:8888/test/fragmentation
+curl -X POST http://172.16.39.47:8888/test/fragmentation
 ```
 
 每个测试端点返回格式相同，单个测试对象：
@@ -162,7 +162,7 @@ curl -X POST http://10.0.0.20:8888/test/fragmentation
 获取当前测试状态
 
 ```bash
-curl http://10.0.0.20:8888/test/status
+curl http://172.16.39.47:8888/test/status
 ```
 
 返回内容：
@@ -184,7 +184,7 @@ curl http://10.0.0.20:8888/test/status
 获取最后一次测试的完整结果
 
 ```bash
-curl http://10.0.0.20:8888/test/results
+curl http://172.16.39.47:8888/test/results
 ```
 
 ### 调试接口
@@ -193,21 +193,21 @@ curl http://10.0.0.20:8888/test/results
 查看当前路由表
 
 ```bash
-curl http://10.0.0.20:8888/debug/routes
+curl http://172.16.39.47:8888/debug/routes
 ```
 
 #### GET /debug/interfaces
 查看网络接口配置
 
 ```bash
-curl http://10.0.0.20:8888/debug/interfaces
+curl http://172.16.39.47:8888/debug/interfaces
 ```
 
 #### GET /debug/processes
 检查router.py进程
 
 ```bash
-curl http://10.0.0.20:8888/debug/processes
+curl http://172.16.39.47:8888/debug/processes
 ```
 
 ## 单元测试
@@ -262,8 +262,8 @@ curl http://localhost:8888/test/status
 curl -X PUT http://localhost:8888/config \
   -H "Content-Type: application/json" \
   -d '{
-    "target_ip": "192.168.1.100",
-    "target_network": "192.168.1.0/24"
+    "target_ip": "125.39.61.75",
+    "target_network": "125.39.61.0/24"
   }'
 
 # 2. 验证配置
@@ -282,7 +282,7 @@ curl http://localhost:8888/test/results | jq '.tests[] | {name, passed, details}
 #!/bin/bash
 # 脚本：ci_test.sh
 
-BASE_URL="http://10.0.0.20:8888"
+BASE_URL="http://172.16.39.47:8888"
 
 echo "Running NAT router tests..."
 RESULT=$(curl -s -X POST $BASE_URL/test/all)
@@ -319,13 +319,13 @@ curl http://localhost:8888/test/status | jq '.test_state | {packets_sent, packet
 ### 问题1: 连接被拒绝
 
 ```
-curl: (7) Failed to connect to 10.0.0.20 port 8888: Connection refused
+curl: (7) Failed to connect to 172.16.39.47 port 8888: Connection refused
 ```
 
 **解决方案：**
 - 验证test.py是否运行：`ps aux | grep test.py`
 - 检查防火墙规则：`sudo ufw allow 8888`
-- 验证网络连接到VPS B：`ping 10.0.0.20`
+- 验证网络连接到VPS B：`ping 172.16.39.47`
 
 ### 问题2: 所有测试都失败
 
@@ -340,7 +340,7 @@ curl: (7) Failed to connect to 10.0.0.20 port 8888: Connection refused
 
 **解决方案：**
 - 检查VPS B的网络配置：`ip addr show eth0`
-- 检查到路由器的连接：`ping 10.0.0.10`
+- 检查到路由器的连接：`ping 172.16.35.103`
 - 查看调试信息：`curl http://localhost:8888/debug/routes`
 - 检查router.py是否运行在VPS A
 
@@ -359,10 +359,10 @@ curl -X PUT http://localhost:8888/config \
 ### 内网IP配置
 
 test.py默认假设：
-- VPS A (路由器): 10.0.0.10
-- VPS B (测试机): 10.0.0.20
-- 目标网络: 192.168.1.0/24
-- 目标IP: 192.168.1.100
+- VPS A (路由器): 172.16.35.103
+- VPS B (测试机): 172.16.39.47
+- 目标网络: 125.39.61.0/24
+- 目标IP: 125.39.61.75
 
 如果你的环境不同，使用PUT /config更新这些值。
 
@@ -372,7 +372,7 @@ test.py默认假设：
 
 ```bash
 # 在VPS B上添加路由
-sudo ip route add 192.168.1.0/24 via 10.0.0.10
+sudo ip route add 125.39.61.0/24 via 172.16.35.103
 
 # 验证路由
 ip route show

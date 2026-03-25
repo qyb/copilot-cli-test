@@ -13,3 +13,7 @@ Prompt3: 之前描述有误, 两台VPS都只有eth0, 处于同一私网, 云服�
 Prompt4: 开发 test.py, 跑在测试机器上, 提供 http 接口, 让你可以控制它向路由器发包完成所需要的测试验证. 目前环境我已经设好了 sudo NOPASSWD, 所以现在可以无障碍开发 test.py 了. 完成所有你认为第一版路由器应该通过的测试用例. 为了方便你开发, 我猜你会用 .venv 里安装 http 相关的包？总之做完上面的, 别忘记更新相关文档, requirements.txt, 或者你认为有必要新增加的文档
 
 Prompt5: test.py 运行单元测试没问题, 但是运行集成测试 integration_test.py 出错. test.py 所在终端上主要错误信息是 "TypeError: Object of type timedelta is not JSON serializable", fix it. 争取一次作对, 跑成功你自己写出来的 integration_test.py
+
+Prompt6: 阅读 @AGENTS.md @README.md 等文档了解项目概况。目前几乎所有源代码(包括注释)和文档都使用了不同于真实网络环境的IP配置。真实的路由器IP是172.16.35.103, 真实的测试IP是172.16.39.47, 真实的TARGET_IP是125.39.61.75(这个是一个web站,80端口可达)以及TARGET_NET是125.39.61.0/24。接下来首先搜索所有的源代码和文档，把"10.0.0.10" "10.0.0.20" "192.168.1.0/24" "192.168.1.100" 全部替换成真实的配置。以及 test.py 目前已经运行在 http://172.16.39.47:8888, 完成对应的路由器代码吧！
+
+Prompt7: 现在你是路由器, 集中注意力, 你自己不需要配置新的路由表，删除你刚刚做的 ip route. 然后 sudo 启动 router.  起新进程通知远程的机器访问 TARGET_IP，然后 router.py 会捕获到包，完成必要的包修改，转发给 TARGET_IP

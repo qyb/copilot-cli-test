@@ -45,7 +45,7 @@ else
 fi
 
 # Check route configuration
-ROUTE_EXISTS=$(ip route show | grep -q "192.168.1" && echo "yes" || echo "no")
+ROUTE_EXISTS=$(ip route show | grep -q "125.39.61" && echo "yes" || echo "no")
 if [ "$ROUTE_EXISTS" = "yes" ]; then
     echo "✓ Target route configured"
 else

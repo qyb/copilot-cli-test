@@ -36,56 +36,56 @@ python test.py --debug
 
 ```bash
 # 健康检查
-curl http://10.0.0.20:8888/health
+curl http://172.16.39.47:8888/health
 
 # 获取配置
-curl http://10.0.0.20:8888/config
+curl http://172.16.39.47:8888/config
 
 # 获取最后的测试结果
-curl http://10.0.0.20:8888/test/results
+curl http://172.16.39.47:8888/test/results
 
 # 获取测试状态
-curl http://10.0.0.20:8888/test/status
+curl http://172.16.39.47:8888/test/status
 ```
 
 ### 运行测试
 
 ```bash
 # 运行所有测试
-curl -X POST http://10.0.0.20:8888/test/all
+curl -X POST http://172.16.39.47:8888/test/all
 
 # 单个测试
-curl -X POST http://10.0.0.20:8888/test/route_table
-curl -X POST http://10.0.0.20:8888/test/connectivity
-curl -X POST http://10.0.0.20:8888/test/basic_nat
-curl -X POST http://10.0.0.20:8888/test/tcp
-curl -X POST http://10.0.0.20:8888/test/udp
-curl -X POST http://10.0.0.20:8888/test/fragmentation
+curl -X POST http://172.16.39.47:8888/test/route_table
+curl -X POST http://172.16.39.47:8888/test/connectivity
+curl -X POST http://172.16.39.47:8888/test/basic_nat
+curl -X POST http://172.16.39.47:8888/test/tcp
+curl -X POST http://172.16.39.47:8888/test/udp
+curl -X POST http://172.16.39.47:8888/test/fragmentation
 ```
 
 ### 调试命令
 
 ```bash
 # 查看路由表
-curl http://10.0.0.20:8888/debug/routes
+curl http://172.16.39.47:8888/debug/routes
 
 # 查看网络接口
-curl http://10.0.0.20:8888/debug/interfaces
+curl http://172.16.39.47:8888/debug/interfaces
 
 # 检查router进程
-curl http://10.0.0.20:8888/debug/processes
+curl http://172.16.39.47:8888/debug/processes
 ```
 
 ### 更新配置
 
 ```bash
-curl -X PUT http://10.0.0.20:8888/config \
+curl -X PUT http://172.16.39.47:8888/config \
   -H "Content-Type: application/json" \
   -d '{
-    "router_ip": "10.0.0.10",
-    "test_machine_ip": "10.0.0.20",
-    "target_network": "192.168.1.0/24",
-    "target_ip": "192.168.1.100"
+    "router_ip": "172.16.35.103",
+    "test_machine_ip": "172.16.39.47",
+    "target_network": "125.39.61.0/24",
+    "target_ip": "125.39.61.75"
   }'
 ```
 
@@ -115,7 +115,7 @@ make test-coverage
 make test-integration
 
 # 或直接运行
-python integration_test.py http://10.0.0.20:8888
+python integration_test.py http://172.16.39.47:8888
 ```
 
 ## 完整工作流示例
@@ -137,7 +137,7 @@ python integration_test.py http://localhost:8888
 
 ```bash
 # 1. 确保路由已配置
-sudo ip route add 192.168.1.0/24 via 10.0.0.10
+sudo ip route add 125.39.61.0/24 via 172.16.35.103
 ip route show
 
 # 2. 启动test.py
@@ -197,7 +197,7 @@ make docs              # 显示文档导航
 ```bash
 curl http://localhost:8888/debug/routes
 curl http://localhost:8888/debug/interfaces
-ping 10.0.0.10
+ping 172.16.35.103
 ip route show
 ```
 

@@ -6,7 +6,7 @@ This script can be run from an external machine to test the NAT router
 through test.py's HTTP interface.
 
 Usage:
-    python integration_test.py http://10.0.0.20:8888
+    python integration_test.py http://172.16.39.47:8888
 """
 
 import sys
@@ -95,7 +95,7 @@ def main():
     """Main integration test"""
     if len(sys.argv) < 2:
         print("Usage: python integration_test.py <test_server_url>")
-        print("Example: python integration_test.py http://10.0.0.20:8888")
+        print("Example: python integration_test.py http://172.16.39.47:8888")
         sys.exit(1)
     
     url = sys.argv[1]
