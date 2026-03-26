@@ -1,47 +1,53 @@
-# 网络验证指南 - VPS部署拓扑
+# 关键信息 - Agent 工作须知
 
-本文档说明在真实VPS环境中验证IPv4 NAT路由器的网络拓扑和基础配置。
+## 1. 严格禁止 git commit
+agent **不得自行 git commit**，除非用户明确要求。所有代码变动应通过用户确认。
 
-## 网络拓扑
+## 2. Agent 环境能力
+- Agent 当前开发机器上已经被赋予 **sudo 能力**
+- 可以直接执行需要 root 权限的命令 /usr/bin/tcpdump, /usr/sbin/ip, /usr/sbin/sysctl, /usr/bin/watch, /usr/bin/ps, /usr/bin/kill, /usr/bin/tail, /usr/bin/grep, .venv/bin/python3
+- 无需额外输入密码
 
-两台VPS都处于同一私网中，云服务商代理公网连接。每台VPS只有一块eth0网卡连接到云内网。
+## 3. Python 环境路径
+- Python 解释器路径：`.venv/bin/python3`
+- 所有 Python 脚本执行都应使用此路径
+- 示例：`sudo .venv/bin/python3 router.py --interface veth_host_a --interface veth_host_b --nat-mode --log-level INFO`
+
+## 4. 网络拓扑 - 需更新
+**基于 NAMESPACE_SETUP.md 的完整拓扑：**
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│              云服务商公网/云内网  eth0                   │
-│  VPS A (路由器)             VPS B (源端/测试)            │
-│  172.16.35.103             172.16.39.47                │
-│  • IP转发启用               • 配置路由指向VPS A          │
-│  • 运行router程序           • 发送测试流量               │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                  宿主环境 (host namespace)                       │
+│                                                                 │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │            router.py 程序 (运行中)                        │ │
+│  │  - NAT转发逻辑                                           │ │
+│  │  - 处理 veth 接口的数据包                               │ │
+│  │  - 解析 ip route 并自动监听默认路由接口                  │ │
+│  │  - 将目标为外部网络的流量转发到默认网关                 │ │
+│  └───────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│  veth_host_a ←→ veth_ns_a        veth_host_b ←→ veth_ns_b     │
+│  10.0.0.1/24                     10.0.1.1/24                  │
+│                                                                 │
+│  eth3 (Gateway Interface) - 缺省路由接口                        │
+│  └─ 用于将外部网络流量转发至默认网关                           │
+│                                                                 │
+└──────────────┬─────────────────────────────┬──────────────────┘
+               │                             │
+           ┌───▼──────────┐        ┌────────▼──┐
+           │ test_client  │        │test_target│
+           │ namespace    │        │ namespace │
+           │              │        │           │
+           │ veth_ns_a    │        │ veth_ns_b │
+           │ 10.0.0.2/24  │        │10.0.1.2/24│
+           └────────────────┘       └───────────┘
+               (发包端)              (接收端)
 ```
 
-## 快速配置参考
+**关键点：**
+- Gateway Interface 是系统默认路由指向的网卡
+- 用于将 target 为外部网络的流量通过默认网关转发
+- Router 需自动解析系统路由表，识别默认网关和关联接口
 
-### VPS A（路由器机器）
-
-```bash
-# 1. 启用IP转发
-sudo sysctl -w net.ipv4.ip_forward=1
-
-# 2. 运行路由器（需要root权限和sudo NOPASSWD配置）
-sudo ./.venv/bin/python router.py --interface eth0 --nat-mode
-```
-
-### VPS B（源端机器）
-
-```bash
-# 1. 配置默认路由指向VPS A
-# 示例：将目标网络 125.39.61.0/24 流量转发通过VPS A
-sudo ip route add 125.39.61.0/24 via 172.16.35.103
-
-# 2. 发送测试包
-ping 125.39.61.75
-curl http://125.39.61.75:80
-```
-
-## 相关文档
-
-- **测试套件**：[docs/test.md](./docs/test.md) - test.py HTTP服务器及测试用例说明
-- **完整验证指南**：[docs/verify.md](./docs/verify.md) - 详细的验证场景、故障排查和性能测试指南
-- **环境配置**：[docs/env.md](./docs/env.md) - 如何配置sudo NOPASSWD以免密执行调试命令

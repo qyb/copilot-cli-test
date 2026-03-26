@@ -63,9 +63,21 @@ class IPv4Forwarder:
             
             # Lookup route
             route = self.route_table.lookup(packet.dst)
+            
+            # If no specific route found, use default gateway if available
             if not route:
-                self.logger.debug(f"No route to {packet.dst}")
-                return None
+                default_gw = self.route_table.get_default_gateway()
+                if default_gw:
+                    gw_ip, gw_iface = default_gw
+                    self.logger.debug(
+                        f"No specific route for {packet.dst}, using default gateway {gw_ip} via {gw_iface}"
+                    )
+                    # Create a temporary route for this packet
+                    from .route_table import Route
+                    route = Route(destination='0.0.0.0/0', gateway=gw_ip, interface=gw_iface)
+                else:
+                    self.logger.debug(f"No route to {packet.dst}")
+                    return None
             
             output_interface = route.interface
             

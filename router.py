@@ -27,15 +27,15 @@ import threading
 from typing import Optional
 
 
-def load_system_routes(route_table, interface: str) -> int:
+def load_system_routes(route_table, interface: str = None) -> tuple:
     """Load system routes into the router's route table
     
     Args:
         route_table: RouteTable instance
-        interface: Network interface to filter routes
+        interface: Optional network interface to filter routes (if None, loads all routes)
     
     Returns:
-        Number of routes loaded
+        Tuple of (routes_loaded, gateway_interfaces) where gateway_interfaces is a set of interface names
     """
     try:
         result = subprocess.run(
@@ -46,6 +46,8 @@ def load_system_routes(route_table, interface: str) -> int:
         )
         
         route_count = 0
+        gateway_interfaces = set()
+        
         for line in result.stdout.strip().split('\n'):
             if not line:
                 continue
@@ -53,11 +55,12 @@ def load_system_routes(route_table, interface: str) -> int:
             # Parse route line
             # Format: DESTINATION via GATEWAY dev INTERFACE ...
             # Example: default via 172.16.63.253 dev eth0 proto dhcp src 172.16.35.103 metric 100
+            # Direct route: 10.0.0.0/24 dev veth_host_a proto kernel scope link src 10.0.0.1
             parts = line.split()
-            if len(parts) < 4:
+            if len(parts) < 2:
                 continue
             
-            destination = parts[0] if parts[0] != 'default' else '0.0.0.0'
+            destination = parts[0] if parts[0] != 'default' else '0.0.0.0/0'
             
             # Find gateway and interface
             gateway = None
@@ -69,20 +72,30 @@ def load_system_routes(route_table, interface: str) -> int:
                 elif part == 'dev' and i + 1 < len(parts):
                     route_iface = parts[i + 1]
             
-            # If no gateway (direct route), use 0.0.0.0
-            if gateway is None:
-                gateway = '0.0.0.0'
+            # Skip if no interface found
             if route_iface is None:
-                route_iface = interface
+                continue
             
-            # Add route
-            route_table.add_route(destination, gateway, route_iface)
-            route_count += 1
+            # Track gateway interfaces (interfaces connected to a gateway)
+            if gateway is not None:
+                gateway_interfaces.add(route_iface)
+                # If no specific interface filter, or this route matches the filter
+                if interface is None or route_iface == interface:
+                    if gateway is None:
+                        gateway = '0.0.0.0'
+                    
+                    route_table.add_route(destination, gateway, route_iface)
+                    route_count += 1
+            else:
+                # Direct route (no gateway)
+                if interface is None or route_iface == interface:
+                    route_table.add_route(destination, '0.0.0.0', route_iface)
+                    route_count += 1
         
-        return route_count
+        return (route_count, gateway_interfaces)
     except Exception as e:
         logging.getLogger(__name__).warning(f"Failed to load system routes: {e}")
-        return 0
+        return (0, set())
 
 
 def main():
@@ -163,9 +176,20 @@ def main():
         nat_engine = NATEngine()
         forwarder = IPv4Forwarder(route_table, nat_engine, nat_enabled)
         
-        # Load system routes (use first interface as reference)
-        routes_loaded = load_system_routes(route_table, args.interfaces[0])
+        # Load system routes (use first interface as reference, or None to load all)
+        routes_loaded, gateway_ifaces = load_system_routes(route_table)
         logger.info(f"Loaded {routes_loaded} system routes into router table")
+        logger.info(f"Detected gateway interfaces: {gateway_ifaces if gateway_ifaces else 'none'}")
+        
+        # Check for default gateway
+        default_gw = route_table.get_default_gateway()
+        if default_gw:
+            gw_ip, gw_iface = default_gw
+            logger.info(f"Default gateway: {gw_ip} via {gw_iface}")
+            # Add default gateway interface to monitored interfaces if not already present
+            if gw_iface not in args.interfaces:
+                logger.info(f"Adding default gateway interface {gw_iface} to monitored interfaces")
+                args.interfaces.append(gw_iface)
         
         # Create packet handlers for all interfaces
         handlers = []

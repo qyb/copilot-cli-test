@@ -28,13 +28,14 @@ class RouteTable:
     def __init__(self):
         """Initialize empty routing table"""
         self.routes: Dict[str, Route] = {}
+        self.default_gateway: Optional[Tuple[str, str]] = None  # (gateway_ip, interface)
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
     
     def add_route(self, destination: str, gateway: str, interface: str, metric: int = 0) -> None:
         """Add a route to the routing table
         
         Args:
-            destination: CIDR network (e.g., "125.39.61.0/24")
+            destination: CIDR network (e.g., "125.39.61.0/24") or "0.0.0.0/0" for default
             gateway: Gateway IP (e.g., "172.16.35.103")
             interface: Output interface (e.g., "eth0")
             metric: Route metric/priority
@@ -47,6 +48,12 @@ class RouteTable:
             
             route = Route(destination, gateway, interface, metric)
             self.routes[destination] = route
+            
+            # Track default gateway
+            if destination in ("0.0.0.0/0", "0.0.0.0"):
+                self.default_gateway = (gateway, interface)
+                self.logger.info(f"Set default gateway: {gateway} via {interface}")
+            
             self.logger.debug(f"Added route: {destination} -> {gateway} via {interface}")
         except ValueError as e:
             self.logger.error(f"Invalid route: {e}")
@@ -109,6 +116,14 @@ class RouteTable:
             List of Route objects
         """
         return list(self.routes.values())
+    
+    def get_default_gateway(self) -> Optional[Tuple[str, str]]:
+        """Get the default gateway (IP, interface) tuple
+        
+        Returns:
+            Tuple of (gateway_ip, interface_name) or None if not set
+        """
+        return self.default_gateway
     
     def clear(self) -> None:
         """Clear all routes"""
