@@ -12,6 +12,9 @@ Usage:
     # Run router on eth0 with NAT
     sudo python3 router.py --interface eth0 --nat-mode
     
+    # Run router on multiple interfaces
+    sudo python3 router.py --interface veth_host_a --interface veth_host_b --nat-mode
+    
     # Or use default settings
     sudo python3 router.py
 """
@@ -20,6 +23,7 @@ import sys
 import argparse
 import logging
 import subprocess
+import threading
 from typing import Optional
 
 
@@ -88,8 +92,9 @@ def main():
     )
     parser.add_argument(
         '--interface',
-        default='eth0',
-        help='Primary network interface for routing (default: eth0)'
+        action='append',
+        dest='interfaces',
+        help='Network interface(s) for routing (can be specified multiple times)'
     )
     parser.add_argument(
         '--nat-mode',
@@ -115,6 +120,10 @@ def main():
     )
     
     args = parser.parse_args()
+    
+    # If no interfaces specified, use defaults
+    if not args.interfaces:
+        args.interfaces = ['eth0']
     
     # Configure logging
     log_level = getattr(logging, args.log_level)
@@ -146,7 +155,7 @@ def main():
         from router.nat_engine import NATEngine
         from router.route_table import RouteTable
         
-        logger.info(f"Initializing router on interface {args.interface}")
+        logger.info(f"Initializing router on interfaces: {', '.join(args.interfaces)}")
         logger.info(f"NAT mode: {'enabled' if nat_enabled else 'disabled'}")
         
         # Initialize components
@@ -154,15 +163,40 @@ def main():
         nat_engine = NATEngine()
         forwarder = IPv4Forwarder(route_table, nat_engine, nat_enabled)
         
-        # Load system routes
-        routes_loaded = load_system_routes(route_table, args.interface)
+        # Load system routes (use first interface as reference)
+        routes_loaded = load_system_routes(route_table, args.interfaces[0])
         logger.info(f"Loaded {routes_loaded} system routes into router table")
         
-        packet_handler = PacketHandler(args.interface, forwarder)
+        # Create packet handlers for all interfaces
+        handlers = []
+        threads = []
+        for interface in args.interfaces:
+            try:
+                handler = PacketHandler(interface, forwarder)
+                handlers.append(handler)
+                logger.info(f"Created handler for interface {interface}")
+            except ValueError as e:
+                logger.error(f"Failed to create handler for {interface}: {e}")
         
-        # Start packet capture and forwarding
-        logger.info("Starting packet capture and forwarding")
-        packet_handler.start()
+        if not handlers:
+            logger.error("No valid interfaces found for routing")
+            sys.exit(1)
+        
+        # Start packet capture and forwarding on all interfaces in separate threads
+        logger.info("Starting packet capture and forwarding on all interfaces")
+        for handler in handlers:
+            thread = threading.Thread(target=handler.start, daemon=True)
+            thread.start()
+            threads.append(thread)
+            logger.info(f"Started handler thread for {handler.interface}")
+        
+        # Keep the main thread alive while handlers run in background
+        while True:
+            try:
+                import time
+                time.sleep(1)
+            except KeyboardInterrupt:
+                raise
         
     except ImportError as e:
         logger.error(f"Failed to import router modules: {e}")

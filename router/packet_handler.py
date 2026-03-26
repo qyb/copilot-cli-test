@@ -54,9 +54,11 @@ class PacketHandler:
         self.running = True
         self.logger.info(f"Starting packet capture on {self.interface}")
         
-        # Setup signal handlers
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
+        # Setup signal handlers only in main thread
+        import threading
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGINT, self._signal_handler)
+            signal.signal(signal.SIGTERM, self._signal_handler)
         
         try:
             # Start sniffing
@@ -96,22 +98,35 @@ class PacketHandler:
             
             # Only process IP packets
             if not packet.haslayer(IP):
+                self.logger.debug(f"Packet #{self.packet_count}: No IP layer, skipping")
                 return
             
             ip_packet = packet[IP]
+            self.logger.debug(f"Processing IP packet: {ip_packet.src} -> {ip_packet.dst} on {self.interface}")
             
             # Forward the packet
-            # In a real router, this would determine the output interface
-            # and send the packet out. For now, just process and log.
-            forwarded_packet = self.forwarder.forward_packet(ip_packet, self.interface)
+            result = self.forwarder.forward_packet(ip_packet, self.interface)
             
-            if forwarded_packet:
-                # In production, we would send this packet
-                # send(forwarded_packet, iface=output_interface, verbose=False)
-                self.logger.debug(
-                    f"Forwarded packet: {ip_packet.src} -> {ip_packet.dst} "
-                    f"(TTL: {forwarded_packet.ttl})"
+            if result:
+                output_interface, forwarded_packet = result
+                self.logger.info(
+                    f"Forwarding packet: {ip_packet.src} -> {ip_packet.dst} "
+                    f"from {self.interface} to {output_interface}"
                 )
+                # Send the forwarded packet
+                from scapy.all import send
+                try:
+                    send(forwarded_packet, iface=output_interface, verbose=False)
+                    self.logger.debug(
+                        f"Sent packet: {ip_packet.src} -> {ip_packet.dst} "
+                        f"via {output_interface} (TTL: {forwarded_packet.ttl})"
+                    )
+                except Exception as send_error:
+                    self.logger.warning(
+                        f"Failed to send packet on {output_interface}: {send_error}"
+                    )
+            else:
+                self.logger.debug(f"Packet {ip_packet.src} -> {ip_packet.dst} not forwarded (no route or filtered)")
         
         except Exception as e:
             self.error_count += 1

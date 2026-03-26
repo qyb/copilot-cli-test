@@ -17,3 +17,9 @@ Prompt5: test.py 运行单元测试没问题, 但是运行集成测试 integrati
 Prompt6: 阅读 @AGENTS.md @README.md 等文档了解项目概况。目前几乎所有源代码(包括注释)和文档都使用了不同于真实网络环境的IP配置。真实的路由器IP是172.16.35.103, 真实的测试IP是172.16.39.47, 真实的TARGET_IP是125.39.61.75(这个是一个web站,80端口可达)以及TARGET_NET是125.39.61.0/24。接下来首先搜索所有的源代码和文档，把"10.0.0.10" "10.0.0.20" "192.168.1.0/24" "192.168.1.100" 全部替换成真实的配置。以及 test.py 目前已经运行在 http://172.16.39.47:8888, 完成对应的路由器代码吧！
 
 Prompt7: 现在你是路由器, 集中注意力, 你自己不需要配置新的路由表，删除你刚刚做的 ip route. 然后 sudo 启动 router.  起新进程通知远程的机器访问 TARGET_IP，然后 router.py 会捕获到包，完成必要的包修改，转发给 TARGET_IP
+
+Prompt8: 计划利用这台开发机器上的 network namespace/veth 来进行接下来的验证工作。router 跑在宿主环境，测试端从 veth 发包到 router, 然后 router 转发到另一个 veth 环境. 采用 tcpdump 进行旁路验证. 你首先生成需要我完成必要的设置说明, 等我准备好后通知你进行后继实验. 最后顺便把目前相关文档都更新
+
+>> 请执行 ~/.copilot/session-state/d4dfc16e-9ab3-4804-a37c-9b94ad0be4dc/NAMESPACE_SETUP.md 中的所有步骤（第 1-9 步），完成以下准备。。。。
+
+Prompt9: 我把该 NAMESPACE_SETUP.md 复制到了当前目录下, 把里面错误的网络配置逻辑进行了完美修正，以及完成网络配置。你需要重新阅读一遍 @NAMESPACE_SETUP.md 理解正确的配置参数！以及我已经修改完 /etc/sudoers 所以你可以完成所有的 sudo 操作。接下来你完成NAMESPACE_SETUP.md 里所有的验证工作, 和必要的debug/修改. 争取完成当前列表中所有的工作

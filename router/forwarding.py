@@ -42,7 +42,7 @@ class IPv4Forwarder:
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.logger.info(f"IPv4Forwarder initialized (NAT: {nat_enabled})")
     
-    def forward_packet(self, packet: IP, in_interface: str) -> Optional[IP]:
+    def forward_packet(self, packet: IP, in_interface: str) -> Optional[tuple]:
         """Forward an IPv4 packet
         
         Args:
@@ -50,13 +50,13 @@ class IPv4Forwarder:
             in_interface: Input interface name
         
         Returns:
-            Modified packet ready to send, or None if packet should be dropped
+            Tuple of (output_interface, modified_packet) or None if packet should be dropped
         """
         try:
             # Check TTL
             if packet.ttl <= 1:
                 self.logger.debug(f"TTL exceeded for packet {packet.src} -> {packet.dst}")
-                return self._generate_ttl_exceeded(packet)
+                return None  # TTL exceeded, don't forward
             
             # Decrement TTL
             packet.ttl -= 1
@@ -65,6 +65,13 @@ class IPv4Forwarder:
             route = self.route_table.lookup(packet.dst)
             if not route:
                 self.logger.debug(f"No route to {packet.dst}")
+                return None
+            
+            output_interface = route.interface
+            
+            # Avoid sending back on the same interface (unless it's a broadcast)
+            if output_interface == in_interface and not packet.dst.startswith('255.'):
+                self.logger.debug(f"Packet would be sent back on {in_interface}, dropping")
                 return None
             
             # Extract protocol info for NAT
@@ -102,7 +109,7 @@ class IPv4Forwarder:
             elif packet.haslayer(UDP):
                 packet[UDP].chksum = None
             
-            return packet
+            return (output_interface, packet)
         
         except Exception as e:
             self.logger.error(f"Error forwarding packet: {e}", exc_info=True)

@@ -50,54 +50,129 @@ make install
 
 详见 **[QUICK_START.md](./QUICK_START.md)** 了解常用命令。
 
-### 标准流程
+### 单接口模式
+
+```bash
+# 启用IP转发
+sudo sysctl -w net.ipv4.ip_forward=1
+
+# 运行路由器（单个接口）
+sudo .venv/bin/python router.py --interface eth0 --nat-mode
+```
+
+### 多接口模式（推荐用于namespace验证）
+
+```bash
+# 在两个虚拟接口上运行路由器
+sudo .venv/bin/python router.py --interface veth_host_a --interface veth_host_b --nat-mode --log-level DEBUG
+
+# 或从命令行指定多个接口
+sudo .venv/bin/python router.py \
+    --interface eth0 \
+    --interface eth1 \
+    --nat-mode \
+    --log-level INFO
+```
+
+### 标准测试流程
 
 ```bash
 # 激活虚拟环境
 source .venv/bin/activate
 
-# 终端1: 启动test.py服务器（在VPS B上）
+# 终端1: 启动test.py服务器
 python test.py
 
 # 终端2: 运行单元测试
 pytest tests/ -v
 
 # 终端3: 运行集成测试
-python integration_test.py http://172.16.39.47:8888
+python integration_test.py http://localhost:8888
+```
+
+### Network Namespace 验证
+
+详见 **[NAMESPACE_SETUP.md](./NAMESPACE_SETUP.md)** 了解如何设置namespace环境并进行完整的网络验证。
+
+```bash
+# 创建两个network namespaces
+sudo ip netns add test_client
+sudo ip netns add test_target
+
+# 创建veth对并配置（参考NAMESPACE_SETUP.md）
+sudo ip link add veth_host_a type veth peer name veth_ns_a
+# ... 更多配置步骤
+
+# 运行路由器
+sudo .venv/bin/python router.py --interface veth_host_a --interface veth_host_b --nat-mode
+
+# 在另一个终端测试
+sudo ip netns exec test_client ping 10.0.1.2
 ```
 
 ## 项目结构
 
 ```
-├── router.py                # 主程序入口
+├── router.py                # 主程序入口 - 支持多接口模式
 ├── test.py                  # 测试HTTP服务器（VPS B上运行）
+├── integration_test.py      # 集成测试客户端
 ├── router/                  # 路由器核心模块
 │   ├── __init__.py
-│   ├── forwarding.py        # IPv4转发逻辑
+│   ├── forwarding.py        # IPv4转发逻辑（返回输出接口和转发包）
 │   ├── route_table.py       # 路由表管理和CIDR查询
 │   ├── nat_engine.py        # NAT转换引擎
-│   ├── packet_handler.py    # 数据包捕获、处理和发送
+│   ├── packet_handler.py    # 数据包捕获、处理和发送（多线程支持）
 │   └── utils.py             # 校验和计算等工具函数
 ├── tests/                   # 单元和集成测试
 ├── docs/                    # 文档
+│   ├── VERIFICATION.md      # 网络验证结果和性能分析 ⭐
 │   ├── verify.md            # 完整的验证指南
 │   ├── env.md               # sudo NOPASSWD配置指南
 │   └── test.md              # test.py使用指南
-├── AGENTS.md                # VPS部署拓扑和快速配置（重要！）
+├── AGENTS.md                # VPS部署拓扑和快速配置
+├── NAMESPACE_SETUP.md       # Network Namespace设置指南 ⭐
+├── QUICK_START.md           # 快速参考命令
 ├── README.md                # 本文件
 ├── requirements.txt         # Python依赖
 └── .gitignore               # Git忽略配置
 ```
 
+### 最近更新
+
+- ✨ **多接口支持**：router.py现在支持通过多个`--interface`参数指定多个网卡
+- 🧵 **多线程转发**：每个接口在独立线程中运行PacketHandler，实现并发包处理
+- 📤 **实际包转发**：实现了Scapy的`send()`调用，真正转发处理后的数据包
+- 📊 **验证文档**：新增VERIFICATION.md详细记录测试结果和网络验证过程
+
 ## 网络验证设置
 
-详见 [AGENTS.md](./AGENTS.md) 获取网络拓扑说明和快速配置指南。
+### 完整验证流程
+
+1. **Network Namespace 环境** - 参考 [NAMESPACE_SETUP.md](./NAMESPACE_SETUP.md)
+   - 创建虚拟网络命名空间
+   - 配置veth虚拟网卡对
+   - 设置IP地址和路由
+
+2. **路由器启动** - 支持多接口模式
+   ```bash
+   sudo .venv/bin/python router.py --interface veth_host_a --interface veth_host_b --nat-mode
+   ```
+
+3. **验证测试** - 参考 [docs/VERIFICATION.md](./docs/VERIFICATION.md)
+   - ICMP ping测试（双向）
+   - TCP连接验证
+   - 数据包捕获分析（tcpdump）
 
 ### 相关文档
 
-- **[AGENTS.md](./AGENTS.md)** - VPS部署拓扑和基础配置
-- **[docs/verify.md](./docs/verify.md)** - 完整的验证场景、故障排查和性能测试指南  
-- **[docs/env.md](./docs/env.md)** - sudo NOPASSWD配置（调试中免密执行命令）
+| 文档 | 说明 | 用途 |
+|------|------|------|
+| **[NAMESPACE_SETUP.md](./NAMESPACE_SETUP.md)** | Network Namespace完整设置指南 | 建立虚拟网络环境 |
+| **[docs/VERIFICATION.md](./docs/VERIFICATION.md)** | 验证结果与性能分析 | 了解当前验证状态 |
+| **[AGENTS.md](./AGENTS.md)** | VPS部署拓扑和快速配置 | 多机VPS验证 |
+| **[docs/verify.md](./docs/verify.md)** | 完整的验证场景和故障排查 | 深入验证指南 |
+| **[docs/env.md](./docs/env.md)** | sudo NOPASSWD配置 | 免密执行调试命令 |
+| **[QUICK_START.md](./QUICK_START.md)** | 快速参考命令 | 常用命令速查表 |
 - **[docs/test.md](./docs/test.md)** - test.py HTTP测试服务器使用指南
 
 ### 快速参考
