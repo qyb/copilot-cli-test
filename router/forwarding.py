@@ -28,6 +28,7 @@ class IPv4Forwarder:
         route_table: RouteTable,
         nat_engine: NATEngine,
         nat_enabled: bool = True,
+        internal_networks: Optional[list] = None,
     ):
         """Initialize the IPv4 forwarder
         
@@ -35,12 +36,50 @@ class IPv4Forwarder:
             route_table: RouteTable instance for route lookup
             nat_engine: NATEngine instance for NAT translation
             nat_enabled: Whether to perform NAT translation
+            internal_networks: List of internal networks (CIDR format) that should NOT be SNATed
         """
         self.route_table = route_table
         self.nat_engine = nat_engine
         self.nat_enabled = nat_enabled
+        self.internal_networks = internal_networks or []
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        if self.internal_networks:
+            self.logger.info(f"Internal networks for NAT exclusion: {self.internal_networks}")
         self.logger.info(f"IPv4Forwarder initialized (NAT: {nat_enabled})")
+    
+    def _is_external_traffic(self, dst_ip: str, route) -> bool:
+        """Determine if traffic is destined for external network
+        
+        SNAT should only be applied to traffic going to external networks.
+        Internal namespace-to-namespace traffic should NOT be SNATed.
+        
+        Args:
+            dst_ip: Destination IP address
+            route: Route object from routing table lookup
+            
+        Returns:
+            True if traffic is external (should apply SNAT), False if internal
+        """
+        # Direct routes (gateway="0.0.0.0") are internal - don't SNAT
+        if route.gateway == "0.0.0.0":
+            self.logger.debug(f"Direct route for {dst_ip}, not external - skipping SNAT")
+            return False
+        
+        # Check if destination is in internal networks list
+        try:
+            dst_addr = ipaddress.ip_address(dst_ip)
+            for internal_net in self.internal_networks:
+                network = ipaddress.ip_network(internal_net, strict=False)
+                if dst_addr in network:
+                    self.logger.debug(
+                        f"Destination {dst_ip} is in internal network {internal_net} - skipping SNAT"
+                    )
+                    return False
+        except (ValueError, ipaddress.NetmaskValueError):
+            self.logger.warning(f"Invalid IP or network format")
+        
+        # Otherwise, it's external traffic - apply SNAT
+        return True
     
     def forward_packet(self, packet: IP, in_interface: str) -> Optional[tuple]:
         """Forward an IPv4 packet
@@ -102,8 +141,10 @@ class IPv4Forwarder:
                 src_port = udp_layer.sport
                 dst_port = udp_layer.dport
             
-            # Perform NAT if enabled
-            if self.nat_enabled and protocol and src_port and dst_port:
+            # Perform NAT if enabled AND traffic is external
+            # CRITICAL: Only apply SNAT for external traffic (not internal namespace-to-namespace)
+            if (self.nat_enabled and protocol and src_port and dst_port and 
+                self._is_external_traffic(packet.dst, route)):
                 packet = self._apply_nat_outbound(
                     packet,
                     protocol,
@@ -192,7 +233,13 @@ class IPv4Forwarder:
         """Apply SNAT (source NAT) to outbound packet
         
         Translates internal source address to router's address.
+        Only applied for external network traffic.
         """
+        # Validate that gateway is not "0.0.0.0" (should not reach here due to _is_external_traffic check)
+        if route.gateway == "0.0.0.0":
+            self.logger.warning(f"Direct route detected in _apply_nat_outbound for {packet.dst} - not applying SNAT")
+            return packet
+        
         # Try to find existing mapping
         mapping = self.nat_engine.lookup_outbound(
             protocol,

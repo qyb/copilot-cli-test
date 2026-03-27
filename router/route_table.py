@@ -20,6 +20,7 @@ class Route:
     gateway: str      # Gateway IP like "172.16.35.103" or "0.0.0.0" for direct
     interface: str    # Interface like "eth0"
     metric: int = 0   # Route metric/cost
+    is_direct: bool = False  # True if this is a direct (non-gateway) route
 
 
 class RouteTable:
@@ -31,14 +32,15 @@ class RouteTable:
         self.default_gateway: Optional[Tuple[str, str]] = None  # (gateway_ip, interface)
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
     
-    def add_route(self, destination: str, gateway: str, interface: str, metric: int = 0) -> None:
+    def add_route(self, destination: str, gateway: str, interface: str, metric: int = 0, is_direct: bool = False) -> None:
         """Add a route to the routing table
         
         Args:
             destination: CIDR network (e.g., "125.39.61.0/24") or "0.0.0.0/0" for default
-            gateway: Gateway IP (e.g., "172.16.35.103")
+            gateway: Gateway IP (e.g., "172.16.35.103") or "0.0.0.0" for direct routes
             interface: Output interface (e.g., "eth0")
             metric: Route metric/priority
+            is_direct: Whether this is a direct (non-gateway) route
         """
         try:
             # Validate CIDR
@@ -46,7 +48,7 @@ class RouteTable:
             # Validate gateway IP
             ipaddress.ip_address(gateway)
             
-            route = Route(destination, gateway, interface, metric)
+            route = Route(destination, gateway, interface, metric, is_direct)
             self.routes[destination] = route
             
             # Track default gateway
@@ -54,7 +56,8 @@ class RouteTable:
                 self.default_gateway = (gateway, interface)
                 self.logger.info(f"Set default gateway: {gateway} via {interface}")
             
-            self.logger.debug(f"Added route: {destination} -> {gateway} via {interface}")
+            route_type = "direct" if is_direct else "gateway"
+            self.logger.debug(f"Added {route_type} route: {destination} -> {gateway} via {interface}")
         except ValueError as e:
             self.logger.error(f"Invalid route: {e}")
             raise

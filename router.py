@@ -35,7 +35,10 @@ def load_system_routes(route_table, interface: str = None) -> tuple:
         interface: Optional network interface to filter routes (if None, loads all routes)
     
     Returns:
-        Tuple of (routes_loaded, gateway_interfaces) where gateway_interfaces is a set of interface names
+        Tuple of (routes_loaded, gateway_interfaces, internal_networks) where:
+        - routes_loaded: number of routes added
+        - gateway_interfaces: set of interface names connected to gateways
+        - internal_networks: list of internal network CIDR ranges
     """
     try:
         result = subprocess.run(
@@ -47,6 +50,7 @@ def load_system_routes(route_table, interface: str = None) -> tuple:
         
         route_count = 0
         gateway_interfaces = set()
+        internal_networks = set()
         
         for line in result.stdout.strip().split('\n'):
             if not line:
@@ -84,18 +88,20 @@ def load_system_routes(route_table, interface: str = None) -> tuple:
                     if gateway is None:
                         gateway = '0.0.0.0'
                     
-                    route_table.add_route(destination, gateway, route_iface)
+                    route_table.add_route(destination, gateway, route_iface, is_direct=False)
                     route_count += 1
             else:
                 # Direct route (no gateway)
                 if interface is None or route_iface == interface:
-                    route_table.add_route(destination, '0.0.0.0', route_iface)
+                    # Mark this as an internal network (direct route)
+                    internal_networks.add(destination)
+                    route_table.add_route(destination, '0.0.0.0', route_iface, is_direct=True)
                     route_count += 1
         
-        return (route_count, gateway_interfaces)
+        return (route_count, gateway_interfaces, list(internal_networks))
     except Exception as e:
         logging.getLogger(__name__).warning(f"Failed to load system routes: {e}")
-        return (0, set())
+        return (0, set(), [])
 
 
 def main():
@@ -174,12 +180,15 @@ def main():
         # Initialize components
         route_table = RouteTable()
         nat_engine = NATEngine()
-        forwarder = IPv4Forwarder(route_table, nat_engine, nat_enabled)
         
         # Load system routes (use first interface as reference, or None to load all)
-        routes_loaded, gateway_ifaces = load_system_routes(route_table)
+        routes_loaded, gateway_ifaces, internal_networks = load_system_routes(route_table)
         logger.info(f"Loaded {routes_loaded} system routes into router table")
         logger.info(f"Detected gateway interfaces: {gateway_ifaces if gateway_ifaces else 'none'}")
+        logger.info(f"Detected internal networks: {internal_networks if internal_networks else 'none'}")
+        
+        # Create forwarder with internal networks list for NAT exclusion
+        forwarder = IPv4Forwarder(route_table, nat_engine, nat_enabled, internal_networks)
         
         # Check for default gateway
         default_gw = route_table.get_default_gateway()
