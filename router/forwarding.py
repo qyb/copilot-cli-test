@@ -12,6 +12,7 @@ import logging
 import ipaddress
 from typing import Optional
 from scapy.all import IP, ICMP, TCP, UDP, Raw
+from scapy.arch import get_if_addr
 from .route_table import RouteTable
 from .nat_engine import NATEngine, ConnectionState
 from .utils import compute_checksum
@@ -81,6 +82,14 @@ class IPv4Forwarder:
         # Otherwise, it's external traffic - apply SNAT
         return True
     
+    def _get_interface_ip(self, interface: str) -> Optional[str]:
+        """Get IP address of an interface"""
+        try:
+            return get_if_addr(interface)
+        except Exception as e:
+            self.logger.error(f"Failed to get IP for interface {interface}: {e}")
+            return None
+    
     def forward_packet(self, packet: IP, in_interface: str) -> Optional[tuple]:
         """Forward an IPv4 packet
         
@@ -100,52 +109,7 @@ class IPv4Forwarder:
             # Decrement TTL
             packet.ttl -= 1
             
-            # Lookup route
-            route = self.route_table.lookup(packet.dst)
-            
-            # If no specific route found, use default gateway if available
-            if not route:
-                default_gw = self.route_table.get_default_gateway()
-                if default_gw:
-                    gw_ip, gw_iface = default_gw
-                    self.logger.debug(
-                        f"No specific route for {packet.dst}, using default gateway {gw_ip} via {gw_iface}"
-                    )
-                    # Create a temporary route for this packet
-                    from .route_table import Route
-                    route = Route(destination='0.0.0.0/0', gateway=gw_ip, interface=gw_iface)
-                else:
-                    self.logger.debug(f"No route to {packet.dst}")
-                    return None
-            
-            output_interface = route.interface
-            
-            # Avoid sending back on the same interface (loopback prevention)
-            # This prevents re-processing of packets we just sent
-            # BUT: We need to allow internal -> gateway forwarding
-            # So only drop if:
-            # 1. Input and output interfaces are the same AND
-            # 2. It's not a special case (e.g., packet is already SNATed from this interface)
-            if output_interface == in_interface and not packet.dst.startswith('255.'):
-                # Special case: if this is from a gateway interface to the same gateway interface
-                # and the source IP is the gateway IP itself (after SNAT), it's our own loopback
-                default_gw = self.route_table.get_default_gateway()
-                if default_gw:
-                    gw_ip, gw_iface = default_gw
-                    if in_interface == gw_iface and packet.src == gw_ip:
-                        # This is our own loopback packet after SNAT
-                        self.logger.debug(f"Loopback packet detected on {in_interface}, dropping")
-                        return None
-                    elif in_interface != gw_iface:
-                        # Normal loopback prevention for non-gateway interfaces
-                        self.logger.debug(f"Packet would be sent back on {in_interface}, dropping")
-                        return None
-                else:
-                    # No gateway defined, apply normal loopback check
-                    self.logger.debug(f"Packet would be sent back on {in_interface}, dropping")
-                    return None
-            
-            # Extract protocol info for NAT
+            # Extract protocol info FIRST for NAT processing
             protocol = None
             src_port = None
             dst_port = None
@@ -167,14 +131,104 @@ class IPv4Forwarder:
                 # ICMP uses ID instead of port for echo requests/replies
                 if hasattr(icmp_layer, 'id'):
                     icmp_id = icmp_layer.id
-                # Ports don't apply to ICMP, but we still need to do NAT on the source IP
                 src_port = 0
                 dst_port = 0
             
-            # Perform NAT if enabled AND traffic is external
-            # CRITICAL: Only apply SNAT for external traffic (not internal namespace-to-namespace)
-            # For TCP/UDP: need protocol, ports, and external traffic check
-            # For ICMP: just need protocol and external traffic check
+            # Apply DNAT FIRST if this is a reply packet from gateway
+            # This changes packet.dst, so we need to re-lookup route afterwards
+            dnat_applied = False
+            if self.nat_enabled and protocol:
+                default_gw = self.route_table.get_default_gateway()
+                if default_gw:
+                    gw_ip, gw_iface = default_gw
+                    # For DNAT, check if packet came from gateway interface
+                    # AND is destined to any IP on that interface (could be interface IP or gateway IP)
+                    if in_interface == gw_iface:
+                        # Get the actual interface IP
+                        interface_ip = self._get_interface_ip(gw_iface)
+                        # Check if packet is destined to our interface or gateway
+                        if packet.dst == interface_ip or packet.dst == gw_ip:
+                            # This could be a DNAT reply
+                            if protocol == "icmp":
+                                self.logger.debug(
+                                    f"DNAT lookup for ICMP: protocol={protocol}, dst_ip={packet.dst}, icmp_id={icmp_id}"
+                                )
+                                nat_mapping = self.nat_engine.lookup_inbound(
+                                    protocol,
+                                    packet.dst,  # Our IP (the nat_src_ip in the mapping)
+                                    icmp_id if icmp_id else 0,
+                                )
+                            elif protocol in ("tcp", "udp") and dst_port:
+                                self.logger.debug(
+                                    f"DNAT lookup for TCP/UDP: protocol={protocol}, dst_ip={packet.dst}, dst_port={dst_port}"
+                                )
+                                nat_mapping = self.nat_engine.lookup_inbound(
+                                    protocol,
+                                    packet.dst,
+                                    dst_port,
+                                )
+                            else:
+                                nat_mapping = None
+                            
+                            if nat_mapping:
+                                self.logger.info(
+                                    f"DNAT (reply): {protocol.upper()} from {packet.src} "
+                                    f"dst {packet.dst} -> {nat_mapping.orig_src_ip} "
+                                    f"(mapping: orig_src={nat_mapping.orig_src_ip}:{nat_mapping.orig_src_port})"
+                                )
+                                # Restore original destination address to the ORIGINAL SOURCE (reverse of SNAT)
+                                # For return traffic, destination should be the original source IP
+                                packet.dst = nat_mapping.orig_src_ip
+                                if protocol == "tcp" and packet.haslayer(TCP):
+                                    packet[TCP].dport = nat_mapping.orig_src_port
+                                    packet[TCP].chksum = None  # Force recalculation
+                                elif protocol == "udp" and packet.haslayer(UDP):
+                                    packet[UDP].dport = nat_mapping.orig_src_port
+                                    packet[UDP].chksum = None  # Force recalculation
+                                # Invalidate IP checksum to force recalculation
+                                packet.chksum = None
+                                dnat_applied = True
+                                # For ICMP, ID typically stays the same
+            
+            # Now lookup route with possibly DNAT'd destination
+            route = self.route_table.lookup(packet.dst)
+            
+            # If no specific route found, use default gateway if available
+            if not route:
+                default_gw = self.route_table.get_default_gateway()
+                if default_gw:
+                    gw_ip, gw_iface = default_gw
+                    self.logger.debug(
+                        f"No specific route for {packet.dst}, using default gateway {gw_ip} via {gw_iface}"
+                    )
+                    # Create a temporary route for this packet
+                    from .route_table import Route
+                    route = Route(destination='0.0.0.0/0', gateway=gw_ip, interface=gw_iface)
+                else:
+                    self.logger.debug(f"No route to {packet.dst}")
+                    return None
+            
+            output_interface = route.interface
+            
+            # Loopback prevention: drop if input == output
+            # BUT: allow if this packet was just DNAT'd (now going to internal network)
+            if output_interface == in_interface and not packet.dst.startswith('255.') and not dnat_applied:
+                self.logger.debug(f"Loopback prevention: {packet.src} -> {packet.dst} from {in_interface}, dropping")
+                return None
+            
+            # Reject traffic coming FROM gateway interface (external network)
+            # Exception: packets already processed by DNAT (packet.dst has been changed)
+            default_gw = self.route_table.get_default_gateway()
+            if default_gw:
+                gw_ip, gw_iface = default_gw
+                if in_interface == gw_iface and not dnat_applied:
+                    # If we're still destined for our interface IP or gateway IP (not DNAT'd), drop it
+                    interface_ip = self._get_interface_ip(gw_iface)
+                    if packet.dst == gw_ip or packet.dst == interface_ip:
+                        self.logger.debug(f"Drop external traffic from {in_interface}: {packet.src} -> {packet.dst} (no DNAT match)")
+                        return None
+            
+            # Apply SNAT if needed
             if self.nat_enabled and protocol:
                 if (protocol == "icmp" or (src_port and dst_port)) and self._is_external_traffic(packet.dst, route):
                     packet = self._apply_nat_outbound(
@@ -183,6 +237,7 @@ class IPv4Forwarder:
                         src_port,
                         dst_port,
                         route,
+                        output_interface,
                         icmp_id=icmp_id,
                     )
             
@@ -262,6 +317,7 @@ class IPv4Forwarder:
         src_port: int,
         dst_port: int,
         route,
+        output_interface: str,
         icmp_id: int = None,
     ) -> IP:
         """Apply SNAT (source NAT) to outbound packet
@@ -276,6 +332,12 @@ class IPv4Forwarder:
             self.logger.warning(f"Direct route detected in _apply_nat_outbound for {packet.dst} - not applying SNAT")
             return packet
         
+        # Get the actual IP address of the output interface to use as SNAT source
+        nat_src_ip = self._get_interface_ip(output_interface)
+        if not nat_src_ip:
+            self.logger.warning(f"Could not get IP for interface {output_interface}, using gateway as fallback")
+            nat_src_ip = route.gateway
+        
         # Try to find existing mapping
         mapping = self.nat_engine.lookup_outbound(
             protocol,
@@ -287,16 +349,19 @@ class IPv4Forwarder:
         
         # Create new mapping if needed
         if not mapping:
+            # For ICMP, use icmp_id as the port number for mapping storage
+            nat_port = icmp_id if protocol == "icmp" else None
+            
             mapping = self.nat_engine.create_mapping(
                 protocol=protocol,
                 orig_src_ip=packet.src,
-                orig_src_port=src_port,
+                orig_src_port=src_port if protocol != "icmp" else icmp_id,
                 orig_dst_ip=packet.dst,
-                orig_dst_port=dst_port,
-                nat_src_ip=route.gateway,  # Use gateway as NAT address
-                nat_src_port=None,  # Auto-assign
+                orig_dst_port=dst_port if protocol != "icmp" else icmp_id,
+                nat_src_ip=nat_src_ip,  # Use actual interface IP as NAT address
+                nat_src_port=nat_port,  # For ICMP, use ID; for TCP/UDP, auto-assign
                 nat_dst_ip=packet.dst,
-                nat_dst_port=dst_port,
+                nat_dst_port=dst_port if protocol != "icmp" else icmp_id,
             )
         
         # Update TCP state if applicable

@@ -29,3 +29,5 @@ Prompt10: 根据最新创建的文件, AGENTS.md 完全没用了, 删除它, 然
 Prompt11: SNAT 只在一个场景下有意义：内部客户端访问外部网络（比如 125.39.61.75），需要把源地址替换为路由器的公网 IP. 因此 --nat-mode 模式仅仅对向 gateway 缺省路由下一跳时才起作用；找到目前代码里所有 NAT 相关的逻辑, 检查是否有问题
 
 Prompt12: 内网TCP通了。但是NAT实现还是有问题，执行"sudo ip netns exec test_client ping 125.39.61.75", 然后用 "sudo tcpdump -n -i eth3 icmp" 抓包看起来对 default route 路径并没有做源地址替换。争取 "sudo ip netns exec test_client ping 125.39.61.75" 可以测试通过。别忘了你可以用 sudo 来启动 router.py 和 tcpdump
+
+Prompt13: 正确实现 NAT 需要内部保存一个 SNAT 替换缓存，记录源IP/PORT/Protocol, 替换后的IP/PORT, 这样回程的时候可以做 DNAT 检查。这才是 NAT 的完整实现, do it! 以及上次更改你引入了一个 bug, 你自己 sudo 启动 router 检查日志就能看到在 gateway 接口上有 loop forward
