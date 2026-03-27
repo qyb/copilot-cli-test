@@ -27,18 +27,19 @@ import threading
 from typing import Optional
 
 
-def load_system_routes(route_table, interface: str = None) -> tuple:
+def load_system_routes(route_table, monitored_interfaces: list = None) -> tuple:
     """Load system routes into the router's route table
     
     Args:
         route_table: RouteTable instance
-        interface: Optional network interface to filter routes (if None, loads all routes)
+        monitored_interfaces: List of interfaces being monitored by the router.
+                             Only direct routes on these interfaces are marked as internal networks.
     
     Returns:
         Tuple of (routes_loaded, gateway_interfaces, internal_networks) where:
         - routes_loaded: number of routes added
         - gateway_interfaces: set of interface names connected to gateways
-        - internal_networks: list of internal network CIDR ranges
+        - internal_networks: list of internal network CIDR ranges (networks behind monitored interfaces)
     """
     try:
         result = subprocess.run(
@@ -51,6 +52,7 @@ def load_system_routes(route_table, interface: str = None) -> tuple:
         route_count = 0
         gateway_interfaces = set()
         internal_networks = set()
+        monitored_set = set(monitored_interfaces) if monitored_interfaces else set()
         
         for line in result.stdout.strip().split('\n'):
             if not line:
@@ -83,20 +85,18 @@ def load_system_routes(route_table, interface: str = None) -> tuple:
             # Track gateway interfaces (interfaces connected to a gateway)
             if gateway is not None:
                 gateway_interfaces.add(route_iface)
-                # If no specific interface filter, or this route matches the filter
-                if interface is None or route_iface == interface:
-                    if gateway is None:
-                        gateway = '0.0.0.0'
-                    
-                    route_table.add_route(destination, gateway, route_iface, is_direct=False)
-                    route_count += 1
+                # Always add gateway routes
+                route_table.add_route(destination, gateway, route_iface, is_direct=False)
+                route_count += 1
             else:
                 # Direct route (no gateway)
-                if interface is None or route_iface == interface:
-                    # Mark this as an internal network (direct route)
+                route_table.add_route(destination, '0.0.0.0', route_iface, is_direct=True)
+                route_count += 1
+                
+                # Only mark as internal network if it's a direct route on a MONITORED interface
+                # These are the actual internal/namespace networks
+                if route_iface in monitored_set:
                     internal_networks.add(destination)
-                    route_table.add_route(destination, '0.0.0.0', route_iface, is_direct=True)
-                    route_count += 1
         
         return (route_count, gateway_interfaces, list(internal_networks))
     except Exception as e:
@@ -181,8 +181,9 @@ def main():
         route_table = RouteTable()
         nat_engine = NATEngine()
         
-        # Load system routes (use first interface as reference, or None to load all)
-        routes_loaded, gateway_ifaces, internal_networks = load_system_routes(route_table)
+        # Load system routes - pass the interfaces being monitored
+        # So we can identify which direct routes are truly "internal"
+        routes_loaded, gateway_ifaces, internal_networks = load_system_routes(route_table, args.interfaces)
         logger.info(f"Loaded {routes_loaded} system routes into router table")
         logger.info(f"Detected gateway interfaces: {gateway_ifaces if gateway_ifaces else 'none'}")
         logger.info(f"Detected internal networks: {internal_networks if internal_networks else 'none'}")

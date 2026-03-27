@@ -120,15 +120,36 @@ class IPv4Forwarder:
             
             output_interface = route.interface
             
-            # Avoid sending back on the same interface (unless it's a broadcast)
+            # Avoid sending back on the same interface (loopback prevention)
+            # This prevents re-processing of packets we just sent
+            # BUT: We need to allow internal -> gateway forwarding
+            # So only drop if:
+            # 1. Input and output interfaces are the same AND
+            # 2. It's not a special case (e.g., packet is already SNATed from this interface)
             if output_interface == in_interface and not packet.dst.startswith('255.'):
-                self.logger.debug(f"Packet would be sent back on {in_interface}, dropping")
-                return None
+                # Special case: if this is from a gateway interface to the same gateway interface
+                # and the source IP is the gateway IP itself (after SNAT), it's our own loopback
+                default_gw = self.route_table.get_default_gateway()
+                if default_gw:
+                    gw_ip, gw_iface = default_gw
+                    if in_interface == gw_iface and packet.src == gw_ip:
+                        # This is our own loopback packet after SNAT
+                        self.logger.debug(f"Loopback packet detected on {in_interface}, dropping")
+                        return None
+                    elif in_interface != gw_iface:
+                        # Normal loopback prevention for non-gateway interfaces
+                        self.logger.debug(f"Packet would be sent back on {in_interface}, dropping")
+                        return None
+                else:
+                    # No gateway defined, apply normal loopback check
+                    self.logger.debug(f"Packet would be sent back on {in_interface}, dropping")
+                    return None
             
             # Extract protocol info for NAT
             protocol = None
             src_port = None
             dst_port = None
+            icmp_id = None
             
             if packet.haslayer(TCP):
                 protocol = "tcp"
@@ -140,18 +161,30 @@ class IPv4Forwarder:
                 udp_layer = packet[UDP]
                 src_port = udp_layer.sport
                 dst_port = udp_layer.dport
+            elif packet.haslayer(ICMP):
+                protocol = "icmp"
+                icmp_layer = packet[ICMP]
+                # ICMP uses ID instead of port for echo requests/replies
+                if hasattr(icmp_layer, 'id'):
+                    icmp_id = icmp_layer.id
+                # Ports don't apply to ICMP, but we still need to do NAT on the source IP
+                src_port = 0
+                dst_port = 0
             
             # Perform NAT if enabled AND traffic is external
             # CRITICAL: Only apply SNAT for external traffic (not internal namespace-to-namespace)
-            if (self.nat_enabled and protocol and src_port and dst_port and 
-                self._is_external_traffic(packet.dst, route)):
-                packet = self._apply_nat_outbound(
-                    packet,
-                    protocol,
-                    src_port,
-                    dst_port,
-                    route,
-                )
+            # For TCP/UDP: need protocol, ports, and external traffic check
+            # For ICMP: just need protocol and external traffic check
+            if self.nat_enabled and protocol:
+                if (protocol == "icmp" or (src_port and dst_port)) and self._is_external_traffic(packet.dst, route):
+                    packet = self._apply_nat_outbound(
+                        packet,
+                        protocol,
+                        src_port,
+                        dst_port,
+                        route,
+                        icmp_id=icmp_id,
+                    )
             
             # Recalculate IP header checksum
             packet.chksum = None  # Scapy will recalculate
@@ -229,11 +262,14 @@ class IPv4Forwarder:
         src_port: int,
         dst_port: int,
         route,
+        icmp_id: int = None,
     ) -> IP:
         """Apply SNAT (source NAT) to outbound packet
         
         Translates internal source address to router's address.
         Only applied for external network traffic.
+        
+        For ICMP: icmp_id is used instead of port numbers
         """
         # Validate that gateway is not "0.0.0.0" (should not reach here due to _is_external_traffic check)
         if route.gateway == "0.0.0.0":
@@ -273,7 +309,7 @@ class IPv4Forwarder:
         
         # Modify packet
         original_src = packet.src
-        original_sport = src_port
+        original_sport = src_port if protocol != "icmp" else icmp_id
         
         packet.src = mapping.nat_src_ip
         
@@ -281,11 +317,20 @@ class IPv4Forwarder:
             packet[TCP].sport = mapping.nat_src_port
         elif packet.haslayer(UDP):
             packet[UDP].sport = mapping.nat_src_port
+        elif packet.haslayer(ICMP) and icmp_id is not None:
+            # For ICMP, keep the ID but now it's associated with the NAT'd IP
+            # The ID doesn't need to change, only the source IP changes
+            pass
         
-        self.logger.debug(
-            f"SNAT: {original_src}:{original_sport} -> "
-            f"{mapping.nat_src_ip}:{mapping.nat_src_port}"
-        )
+        if protocol == "icmp":
+            self.logger.debug(
+                f"SNAT ICMP: {original_src} -> {mapping.nat_src_ip}"
+            )
+        else:
+            self.logger.debug(
+                f"SNAT: {original_src}:{original_sport} -> "
+                f"{mapping.nat_src_ip}:{mapping.nat_src_port}"
+            )
         
         return packet
     
