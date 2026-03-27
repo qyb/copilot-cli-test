@@ -75,17 +75,39 @@ class NATEngine:
     TCP_TRANSIENT_TIMEOUT = 120    # 2 minutes
     UDP_TIMEOUT = 300               # 5 minutes
 
-    # Port allocation
-    DYNAMIC_PORT_START = 45000
-    DYNAMIC_PORT_END = 48500
-    DYNAMIC_PORT_RANGE = range(DYNAMIC_PORT_START, DYNAMIC_PORT_END + 1)
-
     def __init__(self):
         """Initialize the NAT engine"""
         self.mappings: Dict[Tuple, NATMapping] = {}
+
+        # Read system port range from /proc/sys/net/ipv4/ip_local_port_range
+        self._init_port_range()
+
         self.next_port = self.DYNAMIC_PORT_START
         self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
-        self.logger.info("NAT Engine initialized")
+        self.logger.info(f"NAT Engine initialized (port range: {self.DYNAMIC_PORT_START}-{self.DYNAMIC_PORT_END})")
+
+    def _init_port_range(self):
+        """Initialize port range from system configuration"""
+        try:
+            with open('/proc/sys/net/ipv4/ip_local_port_range', 'r') as f:
+                parts = f.read().strip().split()
+                sys_start = int(parts[0])
+                sys_end = int(parts[1])
+
+                # Ensure minimum port is at least 1024 (well-known port boundary)
+                # Use system range if it's at least 1024, otherwise fallback
+                if sys_start >= 1024:
+                    self.DYNAMIC_PORT_START = sys_start
+                    self.DYNAMIC_PORT_END = sys_end
+                else:
+                    # Fallback: use higher range if system range is too low
+                    self.DYNAMIC_PORT_START = max(1024, sys_start)
+                    self.DYNAMIC_PORT_END = sys_end
+        except Exception as e:
+            # Fallback if /proc file doesn't exist or can't be read
+            self.DYNAMIC_PORT_START = 1025
+            self.DYNAMIC_PORT_END = 65535
+            print(f"Warning: Could not read ip_local_port_range: {e}, using fallback range")
 
     def create_mapping(
         self,
